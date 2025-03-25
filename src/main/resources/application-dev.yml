@@ -1,102 +1,103 @@
+# ==================== 开发配置文件 ====================
 spring:
-  # 数据库配置
-  # todo 需替换配置
+  # ==================== 数据存储配置 ====================
   datasource:
     driver-class-name: com.mysql.cj.jdbc.Driver
-    url: jdbc:mysql://localhost:3306/my_db
+    # ↓↓↓↓↓↓ 数据库连接配置（需替换） ↓↓↓↓↓↓
+    url: jdbc:mysql://localhost:3306/my_db?useUnicode=true&characterEncoding=UTF-8&serverTimezone=Asia/Shanghai
     username: root
     password: root
-  # Redis 配置
-  # todo 需替换配置，然后取消注释
+    # ↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑
+    hikari:
+      connection-timeout: 30000      # 连接超时(ms)
+      maximum-pool-size: 20         # 最大连接数
+      minimum-idle: 5               # 最小空闲连接
+
   redis:
-    # Redis数据库索引（默认为0）
+    # ↓↓↓↓↓↓ Redis配置（取消注释并替换） ↓↓↓↓↓↓
     database: 1
-    # Redis服务器地址
     host: localhost
-    # Redis服务器连接端口
     port: 6379
-    # 连接超时时间
-    timeout: 5000
-    # Redis服务器连接密码（默认为空）
-    password:
+    password: # 密码为空时保持注释
+    timeout: 5000ms                # 连接超时时间
     lettuce:
       pool:
-        # 连接池最大连接数
         max-active: 200
-        # 连接池最大阻塞等待时间（使用负值表示没有限制）
-        max-wait: -1ms
-        # 连接池中的最大空闲连接
+        max-wait: -1ms             # -1表示无限制
         max-idle: 10
-        # 连接池中的最小空闲连接
         min-idle: 0
-# 对象存储
-# todo 需替换配置
+    # ↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑↑
+
+# ==================== 文件存储服务 ====================
 cos:
   client:
+    # ↓↓↓↓↓↓ 腾讯云COS配置（需替换） ↓↓↓↓↓↓
     accessKey: xxx
     secretKey: xxx
-    region: xxx
-    bucket: xxx
-# AI 配置
-ai:
-  apikey: XXX
-#minio 文件服务器配置
+    region: ap-shanghai
+    bucket: example-bucket
+
 minio:
-  #Minio服务所在地址
+  # ↓↓↓↓↓↓ MinIO配置（需替换） ↓↓↓↓↓↓
   endpoint: http://127.0.0.1:9000
-  #连接Minio用户名
-  accessKey: xxxx
-  #连接Minio密码
-  #Minio数据桶名称
-  secretKey: xxx
-  bucketName: xxx
-# Elasticsearch 配置
-# todo 需替换配置，然后取消注释
-#  elasticsearch:
-#    uris: http://localhost:9200
-#    username: root
-#    password: 123456
-# 微信相关
+  accessKey: minioadmin
+  secretKey: minioadmin
+  bucketName: default-bucket
+  secure: false                    # HTTPS连接
+  region: us-east-1
+
+# ==================== 智能服务配置 ====================
+ai:
+  # ↓↓↓↓↓↓ AI服务密钥（需替换） ↓↓↓↓↓↓
+  apikey: sk-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+  provider: openai                # [openai|aliyun|xunfei]
+  timeout: 30s                    # API调用超时
+
+# ==================== 搜索服务配置 ====================
+elasticsearch:
+  # ↓↓↓↓↓↓ ES配置（取消注释并替换） ↓↓↓↓↓↓
+  enabled: false
+  uris: http://localhost:9200
+  username: elastic
+  password: changeme
+  connection-timeout: 10s
+  socket-timeout: 30s
+
+# ==================== 第三方服务集成 ====================
 wx:
-  # 微信公众平台
-  # todo 需替换配置
   mp:
-    token: xxx
-    aesKey: xxx
-    appId: xxx
-    secret: xxx
+    # ↓↓↓↓↓↓ 微信公众号配置（需替换） ↓↓↓↓↓↓
+    token: WECHAT_TOKEN
+    aesKey: WECHAT_AES_KEY
+    appId: wx_app_id
+    secret: wx_app_secret
     config-storage:
-      http-client-type: HttpClient
-      key-prefix: wx
+      type: redisson
       redis:
         host: 127.0.0.1
         port: 6379
-      type: Memory
-  # 微信开放平台
-  # todo 需替换配置
-  open:
-    appId: xxx
-    appSecret: xxx
-##登录相关
-############### Github 配置 ##############
-github:
-  client-id: xxx
-  client-secret: xxx
-  redirect-uri: xxx
-############### Sa-Token 配置 (文档: https://sa-token.cc) ##############
-sa-token:
-  # token 名称（同时也是 cookie 名称）
-  token-name: shing-sa-token
-  # token 有效期（单位：秒） 默认30天，-1 代表永久有效
-  timeout: 2592000
-  # token 最低活跃频率（单位：秒），如果 token 超过此时间没有访问系统就会被冻结，默认-1 代表不限制，永不冻结
-  active-timeout: -1
-  # 是否允许同一账号多地同时登录 （为 true 时允许一起登录, 为 false 时新登录挤掉旧登录）
-  is-concurrent: true
-  # 在多人登录同一账号时，是否共用一个 token （为 true 时所有登录共用一个 token, 为 false 时每次登录新建一个 token）
-  is-share: true
-  # token 风格（默认可取值：uuid、simple-uuid、random-32、random-64、random-128、tik）
-  token-style: tik
-  # 是否输出操作日志
-  is-log: true
+        database: 2               # 独立数据库
 
+  open:
+    # ↓↓↓↓↓↓ 微信开放平台配置（需替换） ↓↓↓↓↓↓
+    appId: wx_open_appid
+    appSecret: wx_open_secret
+
+github:
+  # ↓↓↓↓↓↓ GitHub OAuth配置（需替换） ↓↓↓↓↓↓
+  client-id: github_client_id
+  client-secret: github_client_secret
+  redirect-uri: https://api.example.com/oauth/github/callback
+  scope: user:email
+
+# ==================== 安全认证配置 ====================
+sa-token:
+  # ↓↓↓↓↓↓ 会话令牌配置 ↓↓↓↓↓↓
+  token-name: shing-sa-token
+  timeout: 300                   # 使用Duration格式
+  active-timeout: -1             # 永不过期
+  is-concurrent: true            # 允许并发登录
+  is-share: true                 # 共享Token
+  token-style: tik               # Token生成风格
+  token-prefix: "Bearer"         # 请求头前缀
+  is-log: false                  # 生产环境关闭日志

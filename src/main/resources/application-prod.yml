@@ -1,35 +1,39 @@
-# 线上配置文件
+# ==================== 线上配置文件 ====================
 server:
-  port: 8101
+  port: 8101  # 服务端口
+
 spring:
   # 数据库配置
-  # todo 需替换配置
   datasource:
     driver-class-name: com.mysql.cj.jdbc.Driver
+    # TODO: 需替换为生产环境数据库连接
     url: jdbc:mysql://localhost:3306/my_db
-    username: root
-    password: 123456
+    username: root  # TODO: 替换为生产环境用户名
+    password: 123456  # TODO: 替换为生产环境密码
+
   # Redis 配置
-  # todo 需替换配置
   redis:
     database: 1
-    host: localhost
+    host: localhost  # TODO: 替换为生产环境 Redis 地址
     port: 6379
-    timeout: 5000
-    password: 123456
+    timeout: 5000ms  # 设置连接超时时间
+    password: 123456  # TODO: 替换为生产环境密码
+
   # Elasticsearch 配置
-  # todo 需替换配置
   elasticsearch:
-    uris: http://localhost:9200
-    username: root
-    password: 123456
+    uris: http://localhost:9200  # TODO: 替换为生产环境 Elasticsearch 地址
+    username: root  # TODO: 替换为生产环境用户名
+    password: 123456  # TODO: 替换为生产环境密码
+
+# ==================== MyBatis-Plus 配置 ====================
 mybatis-plus:
   configuration:
-    # 生产环境关闭日志
+    # 生产环境关闭 SQL 日志，避免日志过多
     log-impl: ''
-# 接口文档配置
+
+# ==================== 接口文档配置 ====================
 knife4j:
   basic:
     enable: true
-    username: root
-    password: 123456
+    username: root  # TODO: 替换为生产环境的接口文档用户名
+    password: 123456  # TODO: 替换为生产环境密码
