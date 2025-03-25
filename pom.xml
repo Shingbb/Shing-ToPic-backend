@@ -1,6 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<project xmlns="http://maven.apache.org/POM/4.0.0"
-         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
          xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
     <modelVersion>4.0.0</modelVersion>
 
@@ -10,22 +9,17 @@
     <version>0.0.1-SNAPSHOT</version>
     <name>Shing-ToPic-backend</name>
     <description>Shing-ToPic-backend</description>
-    <packaging>jar</packaging>
 
     <!-- ==================== 全局属性配置 ==================== -->
     <properties>
-        <!-- 基础环境 -->
-        <java.version>1.8</java.version>
+        <java.version>17</java.version>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
-        <maven.compiler.source>${java.version}</maven.compiler.source>
-        <maven.compiler.target>${java.version}</maven.compiler.target>
-
+        <spring-boot.version>2.7.6</spring-boot.version>
         <!-- 主框架版本 -->
         <spring-boot.version>2.7.6</spring-boot.version>
 
         <!-- 持久层组件 -->
-        <mybatis.version></mybatis.version>
         <mybatis-plus.version>3.5.9</mybatis-plus.version>
         <druid.version>1.2.19</druid.version>
         <mysql.version>8.0.33</mysql.version>
@@ -35,6 +29,8 @@
         <hutool.version>5.8.16</hutool.version>
         <guava.version>33.3.1-jre</guava.version>
         <commons-lang3.version>3.14.0</commons-lang3.version>
+        <caffeine.version>3.1.8</caffeine.version>
+        <jsoup.version>1.18.1</jsoup.version>
 
         <!-- 安全认证 -->
         <sa-token.version>1.39.0</sa-token.version>
@@ -103,10 +99,11 @@
             <artifactId>mybatis-plus-generator</artifactId>
             <version>${mybatis-plus.version}</version>
         </dependency>
+        <!-- MyBatis Plus 分页插件 -->
         <dependency>
             <groupId>com.baomidou</groupId>
             <artifactId>mybatis-plus-jsqlparser</artifactId>
-            <version>${mybatis-plus.version}</version> <!-- 确保版本和 MyBatis Plus 主包一致 -->
+            <version>${mybatis-plus.version}</version>
         </dependency>
         <dependency>
             <groupId>mysql</groupId>
@@ -121,6 +118,18 @@
         </dependency>
 
         <!-- ========== 工具库 ========== -->
+        <!-- HTML 解析 https://mvnrepository.com/artifact/org.jsoup/jsoup-->
+        <dependency>
+            <groupId>org.jsoup</groupId>
+            <artifactId>jsoup</artifactId>
+            <version>${jsoup.version}</version>
+        </dependency>
+        <!-- 本地缓存 Caffeine -->
+        <dependency>
+        <groupId>com.github.ben-manes.caffeine</groupId>
+        <artifactId>caffeine</artifactId>
+        <version>${caffeine.version}</version>
+        </dependency>
         <dependency>
             <groupId>cn.hutool</groupId>
             <artifactId>hutool-all</artifactId>
@@ -147,6 +156,12 @@
             <groupId>me.zhyd.oauth</groupId>
             <artifactId>JustAuth</artifactId>
             <version>${JustAuth.version}</version>
+        </dependency>
+        <!-- https://mvnrepository.com/artifact/com.github.binarywang/wx-java-mp-spring-boot-starter -->
+        <dependency>
+            <groupId>com.github.binarywang</groupId>
+            <artifactId>wx-java-mp-spring-boot-starter</artifactId>
+            <version>${wx-java-mp.version}</version>
         </dependency>
 
         <!-- ========== 云服务集成 ========== -->
@@ -185,49 +200,32 @@
             <scope>test</scope>
         </dependency>
 
-        <!-- ========== 其他组件 ========== -->
         <dependency>
             <groupId>org.projectlombok</groupId>
             <artifactId>lombok</artifactId>
             <optional>true</optional>
         </dependency>
-        <dependency>
-            <groupId>com.github.whvcse</groupId>
-            <artifactId>easy-captcha</artifactId>
-            <version>${easy-captcha.version}</version>
-        </dependency>
     </dependencies>
 
-    <!-- ==================== 构建配置 ==================== -->
     <build>
         <plugins>
-            <!-- Maven 编译插件 -->
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-compiler-plugin</artifactId>
-                <version>3.13.0</version>
+                <version>3.8.1</version>
                 <configuration>
-                    <parameters>true</parameters>
-                    <compilerArgs>
-                        <arg>-Xlint:unchecked</arg>
-                        <arg>-Xlint:deprecation</arg>
-                    </compilerArgs>
+                    <source>${java.version}}</source>
+                    <target>${java.version}}</target>
+                    <encoding>UTF-8</encoding>
                 </configuration>
             </plugin>
-
-            <!-- Spring Boot 打包插件 -->
             <plugin>
                 <groupId>org.springframework.boot</groupId>
                 <artifactId>spring-boot-maven-plugin</artifactId>
                 <version>${spring-boot.version}</version>
                 <configuration>
                     <mainClass>com.shing.shingtopicbackend.ShingToPicBackendApplication</mainClass>
-                    <excludes>
-                        <exclude>
-                            <groupId>org.projectlombok</groupId>
-                            <artifactId>lombok</artifactId>
-                        </exclude>
-                    </excludes>
+                    <skip>true</skip>
                 </configuration>
                 <executions>
                     <execution>
@@ -238,27 +236,7 @@
                     </execution>
                 </executions>
             </plugin>
-            <plugin>
-                <groupId>org.apache.maven.plugins</groupId>
-                <artifactId>maven-resources-plugin</artifactId>
-                <version>3.3.1</version>
-                <configuration>
-                    <encoding>${project.build.sourceEncoding}</encoding>
-                </configuration>
-            </plugin>
         </plugins>
-
-        <!-- 资源文件过滤配置 -->
-        <resources>
-            <resource>
-                <directory>src/main/resources</directory>
-                <filtering>true</filtering>
-                <includes>
-                    <include>**/*.properties</include>
-                    <include>**/*.xml</include>
-                    <include>**/*.ftl</include>
-                </includes>
-            </resource>
-        </resources>
     </build>
+
 </project>
