@@ -1,4 +1,6 @@
-# ![项目图片](./doc/img/ShingToPic-2.png)
+<p align="center">
+  <img src="./doc/img/ShingToPic-2.png" alt="项目图片" width="50%">
+</p>
 
 # **智能协同云图库平台**
 
