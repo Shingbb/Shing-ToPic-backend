@@ -2,6 +2,7 @@ package com.shing.shingtopicbackend.controller;
 
 
 import cn.hutool.core.bean.BeanUtil;
+import cn.hutool.core.util.RandomUtil;
 import cn.hutool.json.JSONUtil;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.shing.shingtopicbackend.annotation.AuthCheck;
@@ -20,6 +21,9 @@ import com.shing.shingtopicbackend.model.vo.PictureVO;
 import com.shing.shingtopicbackend.service.PictureService;
 import com.shing.shingtopicbackend.service.UserService;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.data.redis.core.StringRedisTemplate;
+import org.springframework.data.redis.core.ValueOperations;
+import org.springframework.util.DigestUtils;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
@@ -27,6 +31,7 @@ import javax.annotation.Resource;
 import java.util.Arrays;
 import java.util.Date;
 import java.util.List;
+import java.util.concurrent.TimeUnit;
 
 @Slf4j
 @RestController
@@ -39,14 +44,15 @@ public class PictureController {
     @Resource
     private UserService userService;
 
+    @Resource
+    private StringRedisTemplate stringRedisTemplate;
+
     /**
      * 上传图片（可重新上传）
      */
     @PostMapping("/upload")
 //    @AuthCheck(mustRole = UserConstant.ADMIN_ROLE)
-    public BaseResponse<PictureVO> uploadPicture(
-            @RequestPart("file") MultipartFile multipartFile,
-            PictureUploadRequest pictureUploadRequest
+    public BaseResponse<PictureVO> uploadPicture(@RequestPart("file") MultipartFile multipartFile, PictureUploadRequest pictureUploadRequest
     ) {
         PictureVO pictureVO = pictureService.uploadPicture(multipartFile, pictureUploadRequest);
         return ResultUtils.success(pictureVO);
@@ -56,10 +62,7 @@ public class PictureController {
      * 通过 URL 上传图片（可重新上传）
      */
     @PostMapping("/upload/url")
-    public BaseResponse<PictureVO> uploadPictureByUrl(
-            @RequestBody PictureUploadRequest pictureUploadRequest
-    ) {
-
+    public BaseResponse<PictureVO> uploadPictureByUrl(@RequestBody PictureUploadRequest pictureUploadRequest) {
         String fileUrl = pictureUploadRequest.getFileUrl();
         PictureVO pictureVO = pictureService.uploadPicture(fileUrl, pictureUploadRequest);
         return ResultUtils.success(pictureVO);
@@ -74,7 +77,7 @@ public class PictureController {
         Long id = deleteRequest.getId();
         // 判断是否存在
         Picture oldPicture = pictureService.getById(id);
-        ThrowUtils.throwIf(oldPicture == null, ErrorCode.NOT_FOUND_ERROR);
+        ThrowUtils.throwIf(oldPicture == null, ErrorCode.NOT_FOUND_ERROR, "图片不存在");
         // 仅本人或者管理员可删除
         if (!oldPicture.getUserId().equals(userService.getLoginUser().getId()) && !userService.isAdmin()) {
             throw new BusinessException(ErrorCode.NO_AUTH_ERROR);
@@ -106,9 +109,7 @@ public class PictureController {
         long id = pictureUpdateRequest.getId();
         Picture oldPicture = pictureService.getById(id);
         ThrowUtils.throwIf(oldPicture == null, ErrorCode.NOT_FOUND_ERROR);
-        // 补充审核参数
-
-        pictureService.fillReviewParams(oldPicture);
+        pictureService.fillReviewParams(picture);
         // 操作数据库
         boolean result = pictureService.updateById(picture);
         ThrowUtils.throwIf(!result, ErrorCode.OPERATION_ERROR);
@@ -174,6 +175,58 @@ public class PictureController {
         return ResultUtils.success(pictureService.getPictureVOPage(picturePage));
     }
 
+
+    /**
+     * 分页获取缓存图片列表（封装类）（优化）
+     */
+    @PostMapping("/list/page/vo/cache")
+    public BaseResponse<Page<PictureVO>> listPictureVOByPageWithCache(@RequestBody PictureQueryRequest pictureQueryRequest) {
+        return ResultUtils.success(pictureService.getPictureVOPageWithCache(pictureQueryRequest));
+    }
+
+
+    /**
+     * 分页获取缓存图片列表（封装类）
+     */
+    @PostMapping("/list/page/vo/cacheBefore")
+    public BaseResponse<Page<PictureVO>> listPictureVOByPageWithCacheBefore(@RequestBody PictureQueryRequest pictureQueryRequest) {
+        long current = pictureQueryRequest.getCurrent();
+        long size = pictureQueryRequest.getPageSize();
+        // 限制爬虫
+        ThrowUtils.throwIf(size > 20, ErrorCode.PARAMS_ERROR);
+        // 普通用户默认只能查看已过审的数据
+        pictureQueryRequest.setReviewStatus(PictureReviewStatusEnum.PASS.getValue());
+
+        // 构建缓存 key
+        String queryCondition = JSONUtil.toJsonStr(pictureQueryRequest);
+        String hashKey = DigestUtils.md5DigestAsHex(queryCondition.getBytes());
+        String redisKey = "shingpicture:listPictureVOByPage:" + hashKey;
+        // 从 Redis 缓存中查询
+        ValueOperations<String, String> valueOps = stringRedisTemplate.opsForValue();
+        String cachedValue = valueOps.get(redisKey);
+        if (cachedValue != null) {
+            // 如果缓存命中，返回结果
+            Page<PictureVO> cachedPage = JSONUtil.toBean(cachedValue, Page.class);
+            return ResultUtils.success(cachedPage);
+        }
+
+        // 查询数据库
+        Page<Picture> picturePage = pictureService.page(new Page<>(current, size),
+                pictureService.getQueryWrapper(pictureQueryRequest));
+        // 获取封装类
+        Page<PictureVO> pictureVOPage = pictureService.getPictureVOPage(picturePage);
+
+        // 存入 Redis 缓存
+        String cacheValue = JSONUtil.toJsonStr(pictureVOPage);
+        // 5 - 10 分钟随机过期，防止雪崩
+        int cacheExpireTime = 300 + RandomUtil.randomInt(0, 300);
+        valueOps.set(redisKey, cacheValue, cacheExpireTime, TimeUnit.SECONDS);
+
+        // 返回结果
+        return ResultUtils.success(pictureVOPage);
+    }
+
+
     /**
      * 编辑图片（给用户使用）
      */
@@ -194,17 +247,21 @@ public class PictureController {
         long id = pictureEditRequest.getId();
         Picture oldPicture = pictureService.getById(id);
         ThrowUtils.throwIf(oldPicture == null, ErrorCode.NOT_FOUND_ERROR);
-
         // 校验权限（当前用户是否本人或管理员）
         if (!oldPicture.getUserId().equals(userService.getLoginUser().getId()) && !userService.isAdmin()) {
             throw new BusinessException(ErrorCode.NO_AUTH_ERROR);
         }
+        // 补充审核参数
+        pictureService.fillReviewParams(picture);
         // 更新数据库
         boolean result = pictureService.updateById(picture);
         ThrowUtils.throwIf(!result, ErrorCode.OPERATION_ERROR);
         return ResultUtils.success(true);
     }
 
+    /**
+     * 获取标签分类
+     */
     @GetMapping("/tag_category")
     public BaseResponse<PictureTagCategory> listPictureTagCategory() {
         PictureTagCategory pictureTagCategory = new PictureTagCategory();
@@ -222,7 +279,6 @@ public class PictureController {
     @AuthCheck(mustRole = UserConstant.ADMIN_ROLE)
     public BaseResponse<Boolean> doPictureReview(@RequestBody PictureReviewRequest pictureReviewRequest) {
         ThrowUtils.throwIf(pictureReviewRequest == null, ErrorCode.PARAMS_ERROR);
-
         pictureService.doPictureReview(pictureReviewRequest);
         return ResultUtils.success(true);
     }
@@ -234,7 +290,6 @@ public class PictureController {
     @AuthCheck(mustRole = UserConstant.ADMIN_ROLE)
     public BaseResponse<Integer> uploadPictureByBatch(@RequestBody PictureUploadByBatchRequest pictureUploadByBatchRequest) {
         ThrowUtils.throwIf(pictureUploadByBatchRequest == null, ErrorCode.PARAMS_ERROR);
-
         int uploadCount = pictureService.uploadPictureByBatch(pictureUploadByBatchRequest);
         return ResultUtils.success(uploadCount);
     }

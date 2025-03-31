@@ -42,6 +42,10 @@ public interface PictureService extends IService<Picture> {
     Page<PictureVO> getPictureVOPage(Page<Picture> picturePage);
 
     /**
+     * 通过缓存获取图片包装类（分页）
+     */
+    Page<PictureVO> getPictureVOPageWithCache(PictureQueryRequest request);
+    /**
      * 获取查询对象
      */
     QueryWrapper<Picture> getQueryWrapper(PictureQueryRequest pictureQueryRequest);
@@ -54,7 +58,7 @@ public interface PictureService extends IService<Picture> {
     /**
      * 填充审核参数
      */
-    void fillReviewParams(Picture picturer);
+    void fillReviewParams(Picture picture);
 
     /**
      * 批量抓取和创建图片
