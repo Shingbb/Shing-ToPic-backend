@@ -11,6 +11,8 @@ import cn.hutool.json.JSONUtil;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
+import com.github.benmanes.caffeine.cache.Cache;
+import com.github.benmanes.caffeine.cache.Caffeine;
 import com.shing.shingtopicbackend.exception.BusinessException;
 import com.shing.shingtopicbackend.exception.ErrorCode;
 import com.shing.shingtopicbackend.exception.ThrowUtils;
@@ -36,6 +38,7 @@ import org.jsoup.nodes.Document;
 import org.jsoup.nodes.Element;
 import org.jsoup.select.Elements;
 import org.springframework.data.redis.core.StringRedisTemplate;
+import org.springframework.data.redis.core.ValueOperations;
 import org.springframework.stereotype.Service;
 import org.springframework.util.DigestUtils;
 
@@ -44,6 +47,8 @@ import java.io.IOException;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.util.*;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 
@@ -67,6 +72,16 @@ public class PictureServiceImpl extends ServiceImpl<PictureMapper, Picture> impl
 
     @Resource
     private StringRedisTemplate stringRedisTemplate;
+
+    /**
+     * 本地缓存
+     */
+    private final Cache<String, String> LOCAL_CACHE =
+            Caffeine.newBuilder().initialCapacity(1024)
+                    .maximumSize(10000L)
+                    // 缓存 5 分钟移除
+                    .expireAfterWrite(5L, TimeUnit.MINUTES)
+                    .build();
 
 
     @Override
@@ -186,41 +201,77 @@ public class PictureServiceImpl extends ServiceImpl<PictureMapper, Picture> impl
 
     @Override
     public Page<PictureVO> getPictureVOPageWithCache(PictureQueryRequest pictureQueryRequest) {
-
         // 1. 参数校验与默认值设置
         ThrowUtils.throwIf(pictureQueryRequest.getPageSize() > 20, ErrorCode.PARAMS_ERROR);
         // 普通用户默认只能查看已过审的数据
         pictureQueryRequest.setReviewStatus(PictureReviewStatusEnum.PASS.getValue());
 
-        // 2. 构建缓存Key（MD5哈希防长Key）
-        String cacheKey = "shingpicture:list:" +
-                DigestUtils.md5DigestAsHex(JSONUtil.toJsonStr(pictureQueryRequest).getBytes());
+        // 2. 构建缓存Key
+        String queryCondition = JSONUtil.toJsonStr(pictureQueryRequest);
+        String hashKey = DigestUtils.md5DigestAsHex(queryCondition.getBytes());
+        String cacheKey = String.format("shingpicture:listPictureVOByPage:%s", hashKey);
 
-        // 3. 尝试从缓存获取
-        String cachedJson = stringRedisTemplate.opsForValue().get(cacheKey);
-        if (StrUtil.isNotBlank(cachedJson)) {
-            return JSONUtil.toBean(cachedJson, new TypeReference<Page<PictureVO>>() {
+        // 3. 先从本地缓存中查询
+        String cachedValue = LOCAL_CACHE.getIfPresent(cacheKey);
+        if (cachedValue != null) {
+            // 如果缓存命中，返回结果
+            // 使用TypeReference保留泛型信息，避免转换错误
+            return JSONUtil.toBean(cachedValue, new TypeReference<Page<PictureVO>>() {
             }, false);
         }
+        // 4. 本地缓存未命中，查询 Redis 分布式缓存
+        try {
+            ValueOperations<String, String> valueOps = stringRedisTemplate.opsForValue();
+            cachedValue = valueOps.get(cacheKey);
+            if (cachedValue != null) {
+                // 如果缓存命中，更新本地缓存，返回结果
+                LOCAL_CACHE.put(cacheKey, cachedValue);
+                return JSONUtil.toBean(cachedValue, new TypeReference<Page<PictureVO>>() {
+                }, false);
+            }
+        } catch (Exception e) {
+            // Redis故障时继续执行，不阻断主流程
+            log.error("Redis 缓存查询失败", e);
+        }
 
-        // 4. 缓存未命中时查询数据库
+        // 5. 缓存未命中时查询数据库
         Page<Picture> picturePage = this.page(
                 new Page<>(pictureQueryRequest.getCurrent(), pictureQueryRequest.getPageSize()),
                 getQueryWrapper(pictureQueryRequest)
         );
+        if (CollUtil.isNotEmpty(picturePage.getRecords())) {
+            // 缓存空值（短时间）
+            String emptyJson = JSONUtil.toJsonStr(new Page<PictureVO>());
+            try {
+                stringRedisTemplate.opsForValue().set(
+                        cacheKey, emptyJson, 60L + RandomUtil.randomInt(0, 60), TimeUnit.SECONDS
+                );
+            } catch (Exception e) {
+                log.warn("空值缓存失败", e);
+            }
+            return new Page<>();
+        }
 
-        // 5. 复用已有的 VO 转换方法 getPictureVOPage
-        Page<PictureVO> voPage = getPictureVOPage(picturePage);
+        // 6. 复用已有的 VO 转换方法 getPictureVOPage 获取封装类
+        Page<PictureVO> pictureVOPage = getPictureVOPage(picturePage);
 
-        // 6. 写入缓存（随机过期时间防雪崩）
-        stringRedisTemplate.opsForValue().set(
-                cacheKey,
-                JSONUtil.toJsonStr(voPage),
-                300 + RandomUtil.randomInt(0, 300),
-                TimeUnit.SECONDS
-        );
-
-        return voPage;
+        // 7. 更新缓存
+        // 异步更新缓存
+        CompletableFuture.runAsync(() -> {
+            String cacheValue = JSONUtil.toJsonStr(pictureVOPage);
+            try {
+                // 更新 Redis 缓存
+                // 5 - 10 分钟随机过期，防止雪崩
+                int cacheExpireTime = 300 + RandomUtil.randomInt(0, 300);
+                stringRedisTemplate.opsForValue().set(cacheKey, cacheValue, cacheExpireTime, TimeUnit.SECONDS);
+                // 写入本地缓存
+                LOCAL_CACHE.put(cacheKey, cacheValue);
+            } catch (Exception e) {
+                log.warn("Redis 缓存更新失败", e);
+            }
+        }, Executors.newFixedThreadPool(2));
+        // 获取封装类
+        return pictureVOPage;
     }
 
     @Override
